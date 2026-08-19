@@ -39,7 +39,20 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 });
 
+// NOTE: Hosting environments such as Cloud Run do not support UDP egress, so
+// UDP trackers/DHT can never connect there. HTTP(S) trackers are listed first
+// and are what actually work for peer discovery in that environment; the UDP
+// entries are kept for local/VM use where UDP is available.
 const DEFAULT_TRACKERS = [
+  'http://tracker.opentrackr.org:1337/announce',
+  'http://tracker.openbittorrent.com:80/announce',
+  'https://tracker.gbitt.info:443/announce',
+  'http://tracker.gbitt.info:80/announce',
+  'http://tracker.files.fm:6969/announce',
+  'http://open.acgnxtracker.com:80/announce',
+  'http://tracker.bt4g.com:2095/announce',
+  'https://tracker.tamersunion.org:443/announce',
+  'http://tracker.dler.org:6969/announce',
   'udp://tracker.opentrackr.org:1337/announce',
   'udp://open.tracker.cl:1337/announce',
   'udp://open.demonii.com:1337/announce',
@@ -51,8 +64,6 @@ const DEFAULT_TRACKERS = [
   'udp://tracker.leechers-paradise.org:6969/announce',
   'udp://tracker.zer0day.to:1337/announce',
   'udp://p4p.arenabg.com:1337/announce',
-  'http://tracker.opentrackr.org:1337/announce',
-  'http://tracker.openbittorrent.com:80/announce',
   'udp://tracker.tiny-vps.com:6969/announce'
 ];
 
@@ -339,11 +350,13 @@ app.post('/api/torrent/info', upload.single('torrentFile'), async (req, res) => 
       ? parseMagnetUri(torrentSource)
       : { infoHash: '', name: 'Torrent', trackers: DEFAULT_TRACKERS };
 
-    // Spin up torrent-stream engine to fetch metadata and files list from DHT/trackers
+    // Spin up torrent-stream engine to fetch metadata and files list from trackers.
+    // DHT is disabled: it relies on UDP, which is unsupported on hosts like Cloud Run
+    // and would otherwise emit unhandled 'error' events that crash the server.
     const engine = torrentStream(torrentSource, {
       path: CACHE_DIR,
       trackers: parsedMagnet.trackers || DEFAULT_TRACKERS,
-      dht: true
+      dht: false
     });
 
     let responded = false;
@@ -356,6 +369,14 @@ app.post('/api/torrent/info', upload.single('torrentFile'), async (req, res) => 
         });
       }
     }, 45000);
+
+    engine.on('error', (err: any) => {
+      if (responded) return;
+      responded = true;
+      clearTimeout(timeout);
+      engine.destroy();
+      res.status(500).json({ error: `Torrent engine error: ${err?.message || err}` });
+    });
 
     engine.on('ready', () => {
       if (responded) return;
@@ -404,7 +425,9 @@ app.post('/api/torrent/download', (req, res) => {
     engine = torrentStream(torrentIdentifier, {
       path: CACHE_DIR,
       trackers: (parsedMagnet && parsedMagnet.trackers && parsedMagnet.trackers.length > 0) ? parsedMagnet.trackers : DEFAULT_TRACKERS,
-      dht: true
+      // DHT needs UDP, which hosts like Cloud Run don't support; leaving it on
+      // only produces unhandled 'error' events that can crash the process.
+      dht: false
     });
   } catch (e: any) {
     return res.status(500).json({ error: `Failed to initialize torrent engine: ${e.message}` });
@@ -429,6 +452,13 @@ app.post('/api/torrent/download', (req, res) => {
   };
 
   downloadJobs.set(jobId, job);
+
+  engine.on('error', (err: any) => {
+    job.status = 'error';
+    job.errorMessage = `Torrent engine error: ${err?.message || err}`;
+    clearInterval(downloadInterval);
+    emitDownloadProgress(job);
+  });
 
   engine.on('ready', () => {
     job.torrentName = engine.torrent ? engine.torrent.name : 'Downloaded Media';
