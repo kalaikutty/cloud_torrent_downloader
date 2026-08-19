@@ -27,6 +27,7 @@ export interface DownloadJobStatus {
   eta: number;
   selectedFiles: string[];
   errorMessage?: string;
+  warning?: string;
 }
 
 export interface CacheFile {

@@ -241,7 +241,7 @@ export const Step2TorrentDownloader: React.FC<Step2TorrentDownloaderProps> = ({
             </span>
           </div>
           <span className="text-[10px] font-mono text-[#94A3B8]">
-            SWARM PROTOCOL: TCP / UDP DHT
+            SWARM PROTOCOL: TCP (HTTP/S Trackers)
           </span>
         </div>
 
@@ -499,6 +499,13 @@ export const Step2TorrentDownloader: React.FC<Step2TorrentDownloaderProps> = ({
           </div>
 
           {/* Completion Banner */}
+          {jobStatus.warning && jobStatus.status !== 'completed' && (
+            <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded p-2.5 font-mono">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{jobStatus.warning}</span>
+            </div>
+          )}
+
           {jobStatus.status === 'completed' && (
             <div className="bg-[#0F1117] border border-green-500/30 rounded p-3 flex items-center justify-between">
               <div className="flex items-center gap-2">

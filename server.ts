@@ -104,6 +104,9 @@ interface DownloadJob {
   selectedFiles: string[];
   allFiles: { name: string; path: string; length: number; selected: boolean }[];
   errorMessage?: string;
+  warning?: string;
+  lastDownloadedBytes: number;
+  lastProgressAt: number;
   engine?: any;
   listeners: Set<(data: any) => void>;
 }
@@ -447,6 +450,8 @@ app.post('/api/torrent/download', (req, res) => {
     eta: 0,
     selectedFiles: selectedFilePaths || [],
     allFiles: [],
+    lastDownloadedBytes: 0,
+    lastProgressAt: Date.now(),
     engine,
     listeners: new Set()
   };
@@ -508,6 +513,15 @@ app.post('/api/torrent/download', (req, res) => {
         }
       }
 
+      // Detect a dead/stalled swarm: peers connected but no bytes flowing for a while
+      if (job.downloaded > job.lastDownloadedBytes) {
+        job.lastDownloadedBytes = job.downloaded;
+        job.lastProgressAt = Date.now();
+        job.warning = undefined;
+      } else if (job.status === 'downloading' && job.numPeers > 0 && Date.now() - job.lastProgressAt > 45000) {
+        job.warning = 'Connected to peer(s) but no data has transferred for 45+ seconds. This torrent likely has no active seeders for the selected file(s) — try a different torrent/source.';
+      }
+
       if (job.progress >= 100) {
         job.status = 'completed';
         job.progress = 100;
@@ -547,7 +561,8 @@ function emitDownloadProgress(job: DownloadJob) {
     numPeers: job.numPeers,
     eta: job.eta,
     selectedFiles: job.selectedFiles,
-    errorMessage: job.errorMessage
+    errorMessage: job.errorMessage,
+    warning: job.warning
   };
 
   job.listeners.forEach((listener) => listener(payload));
