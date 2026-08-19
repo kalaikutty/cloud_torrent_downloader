@@ -1,0 +1,6 @@
+{
+  "name": "Cloud Torrent & Media Processor",
+  "description": "A Python and FFmpeg powered cloud torrent downloader, video compressor, and media storage manager with real-time stream processing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
